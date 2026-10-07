@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FreeTalk - English Practice Chatbot</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Noto+Sans+Thai:wght@400;500;600&display=swap" rel="stylesheet">
+    <script src="https://unpkg.com/@phosphor-icons/web"></script>
+    <style>
+        body {
+            font-family: 'Inter', 'Noto Sans Thai', sans-serif;
+            background-color: #0f0f0f;
+            color: #ffffff;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            margin: 0;
+        }
+        .no-scrollbar::-webkit-scrollbar { display: none; }
+        .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+        .chat-scroll::-webkit-scrollbar { width: 6px; }
+        .chat-scroll::-webkit-scrollbar-track { background: transparent; }
+        .chat-scroll::-webkit-scrollbar-thumb { background-color: #3f3f46; border-radius: 10px; }
+        .typing-dot { animation: typing 1.4s infinite ease-in-out both; }
+        .typing-dot:nth-child(1) { animation-delay: -0.32s; }
+        .typing-dot:nth-child(2) { animation-delay: -0.16s; }
+        @keyframes typing {
+            0%, 80%, 100% { transform: scale(0); }
+            40% { transform: scale(1); }
+        }
+    </style>
+</head>
+<body class="bg-zinc-950 p-0 md:p-4">
+    <div class="bg-[#18181b] w-full h-[100dvh] md:h-[800px] md:max-w-[400px] flex flex-col md:rounded-3xl shadow-2xl border border-zinc-800 overflow-hidden relative">
+        <!-- Header -->
+        <div class="flex justify-between items-center p-4 pt-6 md:pt-4 border-b border-zinc-800/50">
+            <div class="flex items-center gap-3">
+                <div class="w-10 h-10 rounded-full bg-blue-900/40 flex items-center justify-center text-blue-500 border border-blue-800/50">
+                    <i class="ph ph-chat-centered-text text-xl"></i>
+                </div>
+                <div>
+                    <h1 class="text-white font-semibold text-lg leading-tight">FreeTalk</h1>
+                    <p class="text-zinc-400 text-xs">chatbot ฝึกพูดภาษาอังกฤษ</p>
+                </div>
+            </div>
+            <div class="flex items-center gap-1.5 bg-yellow-900/30 text-yellow-500 px-3 py-1.5 rounded-full border border-yellow-700/50">
+                <i class="ph-fill ph-coin text-lg"></i>
+                <span id="scoreDisplay" class="font-semibold text-sm">0</span>
+            </div>
+        </div>
+
+        <!-- Categories -->
+        <div class="px-4 py-3 flex gap-2 overflow-x-auto no-scrollbar shrink-0 border-b border-zinc-800/30" id="categoriesContainer"></div>
+
+        <!-- Chat Area -->
+        <div class="flex-1 overflow-y-auto p-4 space-y-4 chat-scroll flex flex-col" id="chatArea"></div>
+
+        <!-- Input Area -->
+        <div class="p-4 border-t border-zinc-800/80 bg-[#18181b]">
+            <form id="chatForm" class="flex gap-2 relative">
+                <input type="text" id="userInput" 
+                    class="w-full bg-[#27272a] text-white border border-zinc-700 rounded-xl px-4 py-3 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all placeholder:text-zinc-500"
+                    placeholder="Type in English..." autocomplete="off">
+                <button type="submit" id="sendBtn"
+                    class="bg-[#27272a] hover:bg-zinc-700 text-white w-12 rounded-xl flex items-center justify-center border border-zinc-700 transition-colors disabled:opacity-50">
+                    <i class="ph ph-paper-plane-right text-xl"></i>
+                </button>
+            </form>
+            <p class="text-[10px] text-zinc-500 text-center mt-2">ไม่ต้องกลัวพิมพ์ผิด AI จะช่วยแนะนำอย่างเป็นมิตร 😊</p>
+        </div>
+    </div>
+
+    <script>
+        const scenarios = [
+            { id: 'food', icon: 'hamburger', label: 'สั่งอาหาร', firstMessage: "Welcome to my restaurant! What would you like to order today? 🍔\n🇹🇭 ยินดีต้อนรับสู่ร้านอาหารของเรา! วันนี้คุณต้องการสั่งอะไรดีคะ?" },
+            { id: 'directions', icon: 'map-pin', label: 'ถามทาง', firstMessage: "Excuse me, I'm a bit lost. Can you tell me how to get to the nearest train station? 🗺️\n🇹🇭 ขอโทษนะคะ ฉันหลงทางนิดหน่อย คุณพอจะบอกทางไปสถานีรถไฟให้หน่อยได้ไหมคะ?" },
+            { id: 'interview', icon: 'briefcase', label: 'สัมภาษณ์งาน', firstMessage: "Hello! Could you start by telling me a little bit about yourself? 💼\n🇹🇭 สวัสดีครับ ช่วยแนะนำตัวสั้นๆ ให้ฟังหน่อยได้ไหมครับ?" },
+            { id: 'general', icon: 'chat-teardrop', label: 'ทั่วไป', firstMessage: "Let's just chat! Tell me about your day, in English. ✨\n🇹🇭 มาคุยกันเถอะ! เล่าเรื่องราววันนี้ของคุณเป็นภาษาอังกฤษดูนะ" }
+        ];
+
+        let activeScenario = 'general';
+        let score = 0;
+        let chatHistory = [];
+
+        const apiKey = "";
+        const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent?key=${apiKey}`;
+        const systemPrompt = `You are 'FreeTalk', an English practice chatbot for Thai students. Your goal is to help them overcome the fear of speaking/writing English (Affective Filter Hypothesis).
+        Rules:
+        1. Be extremely encouraging, friendly, and non-judgmental.
+        2. Use simple English (A1-B2 level).
+        3. Translate user input into Thai to show understanding.
+        4. Give gentle grammar/vocabulary feedback in Thai.
+        5. Provide a continuation reply in English with its Thai translation.
+        6. Format your response EXACTLY like this:
+        📝 คุณพิมพ์ว่า: [User message translation/echo]
+        💡 [Gentle feedback/encouragement in Thai]
+        💬 [English response to continue conversation]
+        🇹🇭 [Thai translation of English response]`;
+
+        const categoriesContainer = document.getElementById('categoriesContainer');
+        const chatArea = document.getElementById('chatArea');
+        const chatForm = document.getElementById('chatForm');
+        const userInput = document.getElementById('userInput');
+        const sendBtn = document.getElementById('sendBtn');
+        const scoreDisplay = document.getElementById('scoreDisplay');
+
+        function init() {
+            renderCategories();
+            startScenario(activeScenario);
+        }
+
+        function renderCategories() {
+            categoriesContainer.innerHTML = '';
+            scenarios.forEach(sc => {
+                const isActive = sc.id === activeScenario;
+                const btn = document.createElement('button');
+                btn.className = `shrink-0 flex items-center gap-1.5 px-4 py-1.5 rounded-xl text-sm whitespace-nowrap transition-all border ${
+                    isActive ? 'bg-blue-900/20 text-blue-400 border-blue-800/50 font-medium' : 'bg-[#27272a] text-zinc-400 border-transparent hover:bg-zinc-800'
+                }`;
+                btn.innerHTML = `<i class="ph ph-${sc.icon}"></i> ${sc.label}`;
+                btn.onclick = () => {
+                    activeScenario = sc.id;
+                    renderCategories();
+                    startScenario(sc.id);
+                };
+                categoriesContainer.appendChild(btn);
+            });
+        }
+
+        function startScenario(id) {
+            const scenario = scenarios.find(s => s.id === id);
+            chatArea.innerHTML = '';
+            chatHistory = [{ role: "model", parts: [{ text: scenario.firstMessage }] }];
+            addBotMessage(scenario.firstMessage);
+        }
+
+        function addBotMessage(text, isTyping = false) {
+            const msgDiv = document.createElement('div');
+            msgDiv.className = 'flex w-full mb-4 justify-start';
+            if (isTyping) {
+                msgDiv.id = 'typingIndicator';
+                msgDiv.innerHTML = `
+                    <div class="bg-[#27272a] px-4 py-3 rounded-2xl rounded-tl-sm text-sm border border-zinc-700/50 flex gap-1 items-center h-5">
+                        <div class="w-1.5 h-1.5 bg-zinc-400 rounded-full typing-dot"></div>
+                        <div class="w-1.5 h-1.5 bg-zinc-400 rounded-full typing-dot"></div>
+                        <div class="w-1.5 h-1.5 bg-zinc-400 rounded-full typing-dot"></div>
+                    </div>
+                `;
+            } else {
+                let contentHTML = '';
+                if (text.includes('💬') || text.includes('📝')) {
+                    let userTransMatch = text.match(/📝(.*?)(?=💡|💬|🇹🇭|$)/s);
+                    let feedbackMatch = text.match(/💡(.*?)(?=💬|🇹🇭|$)/s);
+                    let engMatch = text.match(/💬(.*?)(?=🇹🇭|$)/s);
+                    let thaiMatch = text.match(/🇹🇭(.*)$/s);
+
+                    if (userTransMatch && userTransMatch[1].trim()) {
+                        contentHTML += `<div class="text-zinc-300 text-[13px] mb-2 bg-[#3f3f46]/40 p-2.5 rounded-lg border border-zinc-600/50"><span class="font-medium text-zinc-100">📝 ข้อความของคุณ:</span><br>${userTransMatch[1].trim().replace(/\n/g, '<br>')}</div>`;
+                    }
+                    if (feedbackMatch && feedbackMatch[1].trim()) {
+                        contentHTML += `<div class="text-blue-200 text-[13px] mb-3 bg-blue-900/30 p-2.5 rounded-lg border border-blue-800/50"><span class="font-medium text-blue-400">💡 คำแนะนำจาก AI:</span><br>${feedbackMatch[1].trim().replace(/\n/g, '<br>')}</div>`;
+                    }
+                    if (engMatch && engMatch[1].trim()) {
+                        contentHTML += `<div class="text-zinc-100 text-sm mb-2 mt-1">${engMatch[1].trim().replace(/\n/g, '<br>')}</div>`;
+                    }
+                    if (thaiMatch && thaiMatch[1].trim()) {
+                        contentHTML += `<div class="text-zinc-400 text-xs pt-2 border-t border-zinc-700/50 mt-2">🇹🇭 ${thaiMatch[1].trim().replace(/\n/g, '<br>')}</div>`;
+                    }
+                } else {
+                    const parts = text.split('🇹🇭');
+                    contentHTML = `
+                        <div class="text-zinc-100">${parts[0].trim().replace(/\n/g, '<br>')}</div>
+                        ${parts[1] ? `<div class="text-zinc-400 text-xs mt-2 pt-2 border-t border-zinc-700/50">🇹🇭 ${parts[1].trim().replace(/\n/g, '<br>')}</div>` : ''}
+                    `;
+                }
+                msgDiv.innerHTML = `<div class="bg-[#27272a] px-4 py-3 rounded-2xl rounded-tl-sm max-w-[85%] text-sm leading-relaxed border border-zinc-700/50 shadow-sm">${contentHTML}</div>`;
+            }
+            chatArea.appendChild(msgDiv);
+            chatArea.scrollTop = chatArea.scrollHeight;
+        }
+
+        function addUserMessage(text) {
+            const msgDiv = document.createElement('div');
+            msgDiv.className = 'flex w-full mb-4 justify-end';
+            msgDiv.innerHTML = `<div class="bg-blue-600 text-white px-4 py-3 rounded-2xl rounded-tr-sm max-w-[85%] text-sm leading-relaxed shadow-md">${text}</div>`;
+            chatArea.appendChild(msgDiv);
+            chatArea.scrollTop = chatArea.scrollHeight;
+        }
+
+        function removeTypingIndicator() {
+            const indicator = document.getElementById('typingIndicator');
+            if (indicator) indicator.remove();
+        }
+
+        async function fetchAIResponse(userText) {
+            chatHistory.push({ role: "user", parts: [{ text: userText }] });
+            const payload = {
+                contents: chatHistory,
+                systemInstruction: { parts: [{ text: systemPrompt }] }
+            };
+
+            try {
+                const response = await fetch(apiUrl, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                const result = await response.json();
+                if (result.candidates && result.candidates.length > 0) {
+                    const botReply = result.candidates[0].content.parts[0].text;
+                    chatHistory.push({ role: "model", parts: [{ text: botReply }] });
+                    removeTypingIndicator();
+                    addBotMessage(botReply);
+                } else {
+                    throw new Error("Invalid response");
+                }
+            } catch (error) {
+                removeTypingIndicator();
+                addBotMessage("Oops! Connection dropped for a moment. Please try again! 🔌\n🇹🇭 ระบบขัดข้องชั่วคราว ลองพิมพ์ใหม่อีกครั้งนะครับ");
+                chatHistory.pop();
+            }
+        }
+
+        chatForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const text = userInput.value.trim();
+            if (!text) return;
+            userInput.value = '';
+            userInput.disabled = true;
+            sendBtn.disabled = true;
+
+            addUserMessage(text);
+            score += 10;
+            scoreDisplay.textContent = score;
+
+            addBotMessage('', true);
+            await fetchAIResponse(text);
+
+            userInput.disabled = false;
+            sendBtn.disabled = false;
+            userInput.focus();
+        });
+
+        window.onload = init;
+    </script>
+</body>
+</html>
